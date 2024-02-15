@@ -69,7 +69,7 @@ def getCodeByCommit(commit, project):
     commit_info = project.commits.get(commit.id)
     code = commit_info.stats
     return code
- 
+
 #  data dictorary is defined as following
 #  data['timesplitarray'] --> timedata[4]  ---> timedata[0] is end time of week1, timedata[1] is end time of week2,... timedata[3] is end time of week4
 #  data[groupname] --> groupdata{}
@@ -193,37 +193,60 @@ def getOneProjectAuthorCode(groupname, project, begin_time, end_time):
     return data
 
 #写入execl
-def writeExcel(excelPath, data):
-    workbook = xlwt.Workbook()
-    # 获取第一个sheet页
-    sheet = workbook.add_sheet('git')
-    row0 = ['项目组', '工程名称', '分支名称', '提交次数', '新增代码', '删除代码', '总计代码']
-    for i in range(0, len(row0)):
-        sheet.write(0, i, row0[i])
-    addcount = 0
-    delcount = 0
-    totalcount = 0
-    commitcount = 0
-    for i in range(0, len(data)):
-        recode = data[i]
-        j = 0
-        sheet.write(i + 1, j, recode['group'])
-        sheet.write(i + 1, j + 1, recode['projectname'])
-        sheet.write(i + 1, j + 2, recode['branchename'])
-        commitcount += (int)(recode['commitcount'])
-        sheet.write(i + 1, j + 3, recode['commitcount'])
-        addcount += (int)(recode['codecount']['additions'])
-        sheet.write(i + 1, j + 4, recode['codecount']['additions'])
-        delcount += (int)(recode['codecount']['deletions'])
-        sheet.write(i + 1, j + 5, recode['codecount']['deletions'])
-        totalcount += (int)(recode['codecount']['total'])
-        sheet.write(i + 1, j + 6, recode['codecount']['total'])
- 
-    sheet.write(len(data) + 1, 3, commitcount)
-    sheet.write(len(data) + 1, 4, addcount)
-    sheet.write(len(data) + 1, 5, delcount)
-    sheet.write(len(data) + 1, 6, totalcount)
-    workbook.save(excelPath)
+def WriteAllDataToExcel(excelPath, statistic_time, data):
+    save_path_prefix = excelPath + "\\" + statistic_time.strftime('%Y-%m-')
+    for one_groupname in data.keys():
+        if one_groupname == 'timesplitarray':
+            pass
+        else:
+            workbook = xlwt.Workbook()
+            # 写第一个sheet页，主要是群组的用户信息
+            sheet = workbook.add_sheet('groupmembers')
+            row0 = ['用户名', '是否为群组成员', '第1周提交次数', '第1周新增代码', '第1周删除代码', '第1周总计代码', \
+                '第2周提交次数', '第2周新增代码', '第2周删除代码', '第2周总计代码', \
+                '第3周提交次数', '第3周新增代码', '第3周删除代码', '第3周总计代码', \
+                '第4周提交次数', '第4周新增代码', '第4周删除代码', '第4周总计代码', \
+                '本月提交次数', '本月新增代码', '本月删除代码', '本月总计代码']
+            
+            for i in range(0, len(row0)):
+                sheet.write(0, i, row0[i])
+            
+            member_info = data[one_groupname]['all_group_members']
+            i = 1
+            for one_username in member_info.keys():
+                j = 0
+                sheet.write(i, j, one_username)
+                j += 1
+                sheet.write(i, j, str(member_info[one_username]['belongto']))
+                for j in range(0,const.TOTAL_RECORD_ITEM_NUM):
+                    sheet.write(i, j+2, str(member_info[one_username]['statistic'][j]))
+                i += 1
+            
+            # 写后面每个项目的sheet页
+            for one_project_name in data[one_groupname].keys():
+                if one_project_name == 'all_group_members':
+                    pass
+                else:
+                    sheet = workbook.add_sheet(one_project_name)
+                    row0 = ['用户名', '第1周提交次数', '第1周新增代码', '第1周删除代码', '第1周总计代码', \
+                        '第2周提交次数', '第2周新增代码', '第2周删除代码', '第2周总计代码', \
+                        '第3周提交次数', '第3周新增代码', '第3周删除代码', '第3周总计代码', \
+                        '第4周提交次数', '第4周新增代码', '第4周删除代码', '第4周总计代码', \
+                        '本月提交次数', '本月新增代码', '本月删除代码', '本月总计代码']
+                    for i in range(0, len(row0)):
+                        sheet.write(0, i, row0[i])
+                    
+                    project_info = data[one_groupname][one_project_name]
+                    i = 1
+                    for one_username in project_info.keys():
+                        j = 0
+                        sheet.write(i, j, one_username)
+                        for j in range(0,const.TOTAL_RECORD_ITEM_NUM):
+                            sheet.write(i, j+1, str(project_info[one_username][j]))
+                        i += 1
+            # 生成excel文件名称
+            save_filename = save_path_prefix + one_groupname + ".xls"
+            workbook.save(save_filename)
  
  
 if __name__ == '__main__':
@@ -253,7 +276,7 @@ if __name__ == '__main__':
     data['timesplitarray'] = time_split_array
     for each_group in gitlab_projects_dict.keys():
         data[each_group.name] = dict()
-        data[each_group.name]['all_group_members'] = ""
+        data[each_group.name]['all_group_members'] = dict()
         for each_project in gitlab_projects_dict[each_group]:
             data[each_group.name][each_project.name] = ""
     
@@ -268,6 +291,29 @@ if __name__ == '__main__':
     for threadname in thread_list: threadname.join()
     # print(data)
     # 统计群组内的所有成员工作量
+    # 先初始化群组内的所有具有直接归属关系的用户名
     temp_user_dict = getAllUsers(all_gitlab_groups)
+    for one_groupname in temp_user_dict.keys():
+        if temp_user_dict[one_groupname] == "":
+            pass
+        else:
+            for one_member in temp_user_dict[one_groupname]:
+                if not one_member.username in data[one_groupname]['all_group_members'].keys():
+                    data[one_groupname]['all_group_members'][one_member.username] = dict( belongto = True, statistic = [0] * const.TOTAL_RECORD_ITEM_NUM )
+        # 计算群组内各个项目的用户合计提交数据量，如果用户名不存在，则创建新的用户名
+        for one_project in data[one_groupname].keys():
+            if one_project == 'all_group_members':
+                pass
+            else:
+                for one_username in data[one_groupname][one_project].keys():
+                    if one_username == 'total_commit_data':
+                        pass
+                    else:
+                        if not one_username in data[one_groupname]['all_group_members'].keys():
+                            data[one_groupname]['all_group_members'][one_username] = dict( belongto = False, statistic = [0] * const.TOTAL_RECORD_ITEM_NUM )
+                        
+                        for i in range(0,const.TOTAL_RECORD_ITEM_NUM):
+                            data[one_groupname]['all_group_members'][one_username]['statistic'][i] += data[one_groupname][one_project][one_username][i]
+    #完成群组内的所有成员工作量计算
     
-    writeExcel('E:\codes\python-gitlab\code_count.xls', data)
+    WriteAllDataToExcel('E:\codes\python-gitlab', sincetime, data)
